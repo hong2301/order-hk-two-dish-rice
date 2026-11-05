@@ -74,3 +74,60 @@ note              备注（是否为转载、是否含商业推广等）
 2. Google / 媒体 / YouTube 内容清单（含链接与抓取快照说明）
 3. 采集说明与清洗记录（去重、剔除规则、时间边界处理）
 4. 平台分布与时间分布的描述性统计
+
+---
+
+## 八、需求 2 采集结果（已完成）
+
+> 采集时间：2026-11-05　｜　覆盖区间：2022-01-01 ~ 2026-10-31
+
+### 8.1 产出文件
+
+| 文件 | 内容 | 规模 |
+| --- | --- | --- |
+| `data/google_news_2022-2026.csv` | Google News 索引的报社、网媒、电视台、YouTube、FB/IG 帖文条目（含解码后的媒体原始链接） | **2162 条** |
+| `data/youtube_2022-2026.csv` | YouTube 视频元数据（精确上载日期、播放量、点赞、频道、简介） | **319 条** |
+| `data/summary.md` | 描述性统计摘要（类型 / 年份 / 来源域名 / 频道） | — |
+| `data/stats.json` | 同上的机器可读版 | — |
+| `data/raw/*.json` | 原始采集记录 | — |
+
+### 8.2 结构分布（Google 新闻集 2162 条）
+
+| 来源类型 | 条数 | 说明 |
+| --- | --- | --- |
+| news | 643 | 报社 / 网媒（明报、星岛、香港01、经济日报、文汇、am730…） |
+| lifestyle | 322 | 生活饮食媒体（weekendhk、U Food、ULifestyle、Gotrip、新地…） |
+| instagram | 308 | IG 贴文线索（需求 1 预采） |
+| youtube | 307 | Google News 索引的 YouTube 视频 |
+| facebook | 294 | FB 贴文线索（需求 1 预采） |
+| tv | 225 | 电视台：TVB 97+28、Now 新闻 49、有线 28、myTV SUPER 9、HOY 7、RTHK 2 |
+| aggregator | 40 | Yahoo 新闻等聚合页 |
+| other / intl | 23 | 其他站点 / 境外媒体 |
+
+年度分布：2022 **394** / 2023 **342** / 2024 **416** / 2025 **512** / 2026 **498**（截至 10 月）。
+
+### 8.3 YouTube 集（319 条）
+
+- 年度分布：2022 **42** / 2023 **38** / 2024 **32** / 2025 **103** / 2026 **104**
+- 累计播放量约 **5116 万**
+- 主要频道：香港01、HOY 媒體網絡、星島頭條、TVB (official)、Mill MILK、觀塘食好嘢、高峰熱話、粵語最財經等
+- 日期精度：271 条取自视频页 `dateText`（精确到日），48 条由相对时间（「X 年前 / X 個月前」）估算，`date_source` 字段已标注
+
+### 8.4 采集口径与已知限制
+
+- **Google 口径**：使用 Google News 索引（RSS 检索 + `batchexecute` 解码还原媒体原始 URL）。Google 网页搜索直连被验证码拦截，故未纳入普通网页结果；报社、电视台、YouTube 三类目标已全部覆盖。
+- **查询方式**：17 组关键词 × 5 个年度区间，另加 13 组 `site:` 定向检索（news.tvb.com、tvb.com、rthk.hk、viutv.com、hoy.tv、news.now.com、i-cable.com、youtube.com、facebook.com、instagram.com、mpweekly.com、mingpao.com、scmp.com）。
+- **去重**：Google News article-id 去重；YouTube 按 video-id 去重。
+- **噪声**：标题未必含「兩餸飯」（`title_hit` 列标注，标题命中 1381 / 2162）。相关性扩散条目保留以便研究者自行筛选。
+- **Facebook / Instagram**：本集仅含 Google News 索引到的公开贴文链接（各 294 / 308 条），属需求 1 的线索，正式采集（正文、评论、互动量）另做。
+
+### 8.5 复现
+
+```bash
+pip install requests yt-dlp
+python scripts/collect_google_news.py   # Google News + 真实 URL 解码
+python scripts/collect_youtube_html.py  # YouTube 搜索 + 上载日期
+python scripts/build_summary.py         # 命中标记 + 统计
+```
+
+代理通过环境变量 `PROXY_URL` 指定（默认 `http://192.168.31.238:7897`）。采集带本地缓存（`.tmp/watch_cache.json`、`data/raw/url_decode_cache.json`），重跑不会重复请求。
