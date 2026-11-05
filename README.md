@@ -87,7 +87,9 @@ note              备注（是否为转载、是否含商业推广等）
 | --- | --- | --- |
 | `data/google_news_2022-2026.csv` | Google News 索引的报社、网媒、电视台、YouTube、FB/IG 帖文条目（含解码后的媒体原始链接） | **2162 条** |
 | `data/youtube_2022-2026.csv` | YouTube 视频元数据（精确上载日期、播放量、点赞、时长、频道、简介） | **327 条** |
-| `data/兩餸飯_跨平台传播_2022-2026.xlsx` | **汇总 Excel**：7 个 sheet（说明 / 全部数据 / YouTube视频 / 报刊网媒 / 电视台 / 社交平台线索 / 平台统计），16 列统一表头 | **2489 条** |
+| `data/兩餸飯_跨平台传播_2022-2026.xlsx` | **汇总 Excel**：8 个 sheet（说明 / 全部数据 / Instagram帖子 / Instagram评论 / YouTube视频 / 报刊网媒 / 电视台 / 平台统计），内容表 17 列统一表头 | **3513 条内容 + 9352 条评论** |
+| `data/ig/posts.jsonl` | Instagram 帖子（标签 / 关键词搜索直采） | **1024 条** |
+| `data/ig/comments.jsonl` | Instagram 评论（一级 + 二级回复） | **9352 条** |
 | `data/summary.md` | 描述性统计摘要（类型 / 年份 / 来源域名 / 频道） | — |
 | `data/stats.json` | 同上的机器可读版 | — |
 | `data/raw/*.json` | 原始采集记录 | — |
@@ -148,3 +150,62 @@ python scripts/build_xlsx.py            # 生成汇总 Excel
 ```
 
 代理通过环境变量 `PROXY_URL` 指定（默认 `http://192.168.31.238:7897`）。采集带本地缓存（`.tmp/watch_cache.json`、`data/raw/url_decode_cache.json`），重跑不会重复请求。
+
+---
+
+## 九、需求 1 采集结果：Instagram 帖子与评论（已完成）
+
+> 采集时间：2026-11-05　｜　覆盖区间：2022-01-01 ~ 2026-10-31　｜　账号：3 个已登录 profile 轮换（端口 9222 / 9223 / 9224）
+
+### 9.1 采集方式
+
+Instagram 网页版的标签页实际走的是**关键词搜索接口**（`PolarisKeywordSearchExplorePageRelayQuery`），因此：
+
+1. 用已登录浏览器打开 `explore/search/keyword/?q=<关键词>`，抓首屏 GraphQL 请求的完整表单与请求头（`lsd`、`fb_dtsg`、`X-FB-Entry-Nonce` 等一次性 token）
+2. 用 `requests` 复放首屏请求，再用 `page_info.end_cursor` 翻页（`PolarisKeywordSearchExplorePageRelayPaginationQuery`）
+3. 三个账号分摊关键词，降低单账号限流风险
+4. **相关性过滤**：正文/标签必须真的含「餸飯 / 𩠌飯 / dish rice」等词，剔除无关内容（初采 5809 条 → 过滤后 1024 条）
+5. 评论走 `/api/v1/media/{pk}/comments/`，在浏览器上下文 fetch（复用登录态），按 `next_min_id` 翻页
+
+### 9.2 结果概览
+
+| 项 | 数量 |
+| --- | --- |
+| IG 帖子 | **1024 条**（图片 383 / 视频 353 / 多图 288） |
+| IG 评论 | **9352 条**（一级 9052 + 回复 549，覆盖 648 帖） |
+| 涉及账号 | 500+ 个（opcafehk 31、sourspicynoodle 25、singtaoheadline 24、student.nurse_foodie 17 等） |
+| 帖子年度分布 | 2022 **104** / 2023 **86** / 2024 **187** / 2025 **319** / 2026 **328** |
+| 评论年度分布 | 2022 **574** / 2023 **635** / 2024 **1481** / 2025 **3614** / 2026 **3297** |
+
+### 9.3 帖子字段（posts.jsonl / Instagram帖子 sheet）
+
+`platform, collect_channel, query, code, pk, media_id, taken_at, published_at, user_username, user_fullname, user_pk, is_verified, media_type, product_type, caption, hashtags, like_count, comment_count, view_count, carousel_count, image_urls, video_url, location_name, location_id, coauthors, url, collected_at`
+
+### 9.4 评论字段（comments.jsonl / Instagram评论 sheet）
+
+`platform, post_pk, post_code, post_published_at, post_url, comment_pk, parent_pk, level, text, created_at, published_at, user_username, user_pk, like_count, child_count, collected_at`
+
+### 9.5 已知限制
+
+- IG 搜索结果**相关性随翻页衰减**：单个关键词翻到 50+ 页后返回的多为无关内容，实际有效结果集中在每词前 20~30 页；#兩餸飯 采到 531 条后基本饱和（标签总量 6900，但搜索接口不返回全量）。
+- **评论覆盖率约 43%**（9352 / 21551）：每帖最多翻 5 页（约 75 条），热门帖（>150 评论）只取头部；如需全量可提高 `--max-pages`。
+- 二级回复仅取 API 返回的预览（`preview_child_comments`），未逐条展开 `replies` 接口。
+- 只采集公开账号内容，私密账号与已删除帖自动跳过。
+
+### 9.6 复现
+
+```bash
+# 1. 启动三个已登录浏览器（profile: ig / ig2 / ig3）
+python ig_browser.py --profile ig  --port 9222
+python ig_browser.py --profile ig2 --port 9223
+python ig_browser.py --profile ig3 --port 9224
+
+# 2. 帖子（标签 + 关键词）
+python scripts/ig_collect_keyword.py --ports 9222,9223,9224 --pages 40
+
+# 3. 评论
+python scripts/ig_collect_comments.py --ports 9222,9223,9224 --max-pages 5
+
+# 4. 汇总 Excel
+python scripts/build_xlsx.py
+```
