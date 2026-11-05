@@ -108,6 +108,22 @@ def num(txt):
     return int(d) if d else None
 
 
+def parse_duration(txt):
+    """'1:02:03' / '14:12' -> 秒"""
+    if not txt:
+        return None
+    parts = txt.split(":")
+    try:
+        parts = [int(p) for p in parts]
+    except Exception:
+        return None
+    if len(parts) == 2:
+        return parts[0] * 60 + parts[1]
+    if len(parts) == 3:
+        return parts[0] * 3600 + parts[1] * 60 + parts[2]
+    return None
+
+
 def extract_videos(data):
     out = []
     for v in data:
@@ -191,7 +207,7 @@ def watch_date(s, vid, cache):
     if vid in cache:
         return cache[vid]
     r = req(s, "GET", f"https://www.youtube.com/watch?v={vid}", params={"hl": "zh-HK", "gl": "HK"})
-    res = {"date": "", "views": None, "likes": None}
+    res = {"date": "", "views": None, "likes": None, "duration_sec": None}
     if r:
         t = r.text
         m = re.search(r'"dateText":\{"simpleText":"([^"]+)"', t)
@@ -210,9 +226,15 @@ def watch_date(s, vid, cache):
         mv = re.search(r'"viewCount":\{"simpleText":"([^"]+)"', t) or re.search(r'"viewCount":"(\d+)"', t)
         if mv:
             res["views"] = num(mv.group(1))
-        ml = re.search(r'"likeCount":\{"simpleText":"([^"]+)"', t) or re.search(r'"likeCount":"(\d+)"', t)
+        # 点赞：新版页面在 accessibilityText 里（中文「與另外 N 人對此影片點讚」/ 英文 "N likes"）
+        ml = (re.search(r'"accessibilityText":"(?:與另外 )?([\d,]+) ?(?:人對此影片點讚|人讚好|個讚|likes|other people)', t)
+              or re.search(r'"likeCount":\{"simpleText":"([^"]+)"', t)
+              or re.search(r'"likeCount":"(\d+)"', t))
         if ml:
             res["likes"] = num(ml.group(1))
+        md = re.search(r'"lengthSeconds":"(\d+)"', t)
+        if md:
+            res["duration_sec"] = int(md.group(1))
     cache[vid] = res
     return res
 
@@ -277,11 +299,13 @@ def main():
         it["date_source"] = "watch_page" if inf.get("date") else "approx_relative"
         it["view_count"] = inf.get("views") if inf.get("views") is not None else num(it["view_count_text"])
         it["like_count"] = inf.get("likes")
+        it["duration_sec"] = inf.get("duration_sec") or parse_duration(it.get("duration", ""))
         rows.append(it)
 
     rows.sort(key=lambda x: x["published_at"])
     cols = ["published_at", "date_source", "date_precision", "video_id", "title", "channel", "channel_id",
-            "url", "duration", "view_count", "like_count", "published_text", "desc_snippet", "query"]
+            "url", "duration_sec", "duration", "view_count", "like_count", "published_text",
+            "desc_snippet", "query"]
     out = os.path.join(DATA, "youtube_2022-2026.csv")
     with open(out, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
