@@ -41,7 +41,8 @@ COLS = [
     ("来源类型", 13, "center"),
     ("来源名称", 22, "left"),
     ("域名", 20, "left"),
-    ("标题 / 正文", 58, "left"),
+    ("标题", 40, "left"),
+    ("正文", 60, "left"),
     ("发布日期", 12, "center"),
     ("采集日期", 12, "center"),
     ("链接", 42, "left"),
@@ -161,7 +162,7 @@ def write_sheet(ws, rows, cols):
         ws.column_dimensions[get_column_letter(i)].width = width
     ws.row_dimensions[1].height = 24
     ws.freeze_panes = "A2"
-    wrap = {"标题 / 正文", "评论内容", "帖子正文摘要"}
+    wrap = {"标题", "正文", "评论内容", "帖子正文摘要"}
     for idx, r in enumerate(rows, start=1):
         vals = [idx] + [r.get(n, "") for n, _, _ in cols[1:]]
         for j, v in enumerate(vals, start=1):
@@ -252,7 +253,7 @@ def build_part1():
             "平台": "Instagram",
             "采集通道": "IG 标签搜索" if str(p.get("query", "")).startswith("#") else "IG 关键词搜索",
             "来源类型": "IG 贴文", "来源名称": p.get("user_username") or "",
-            "域名": "instagram.com", "标题 / 正文": txt,
+            "域名": "instagram.com", "标题": "", "正文": txt,
             "发布日期": fmt_date(p.get("published_at")), "采集日期": COLLECTED,
             "链接": p.get("url", ""), "播放量": norm(p.get("view_count")),
             "点赞数": norm(p.get("like_count")), "评论数": norm(p.get("comment_count")),
@@ -265,7 +266,7 @@ def build_part1():
         rows.append({
             "平台": "Threads", "采集通道": "Threads 搜索", "来源类型": "Threads 贴文",
             "来源名称": p.get("user_username") or "", "域名": "threads.com",
-            "标题 / 正文": txt, "发布日期": fmt_date(p.get("published_at")),
+            "标题": "", "正文": txt, "发布日期": fmt_date(p.get("published_at")),
             "采集日期": COLLECTED, "链接": p.get("url", ""), "播放量": "",
             "点赞数": norm(p.get("like_count")), "评论数": norm(p.get("reply_count")),
             "时长(秒)": "", "检索关键词": p.get("query", ""), "标题命中": "是",
@@ -279,7 +280,7 @@ def build_part1():
         rows.append({
             "平台": "Facebook", "采集通道": "Facebook 搜索", "来源类型": "Facebook 贴文",
             "来源名称": p.get("author") or "", "域名": "facebook.com",
-            "标题 / 正文": txt, "发布日期": fmt_date(p.get("published_at")),
+            "标题": "", "正文": txt, "发布日期": fmt_date(p.get("published_at")),
             "采集日期": COLLECTED, "链接": p.get("url", ""), "播放量": "",
             "点赞数": norm(p.get("reaction_count")), "评论数": norm(p.get("comment_count")),
             "时长(秒)": "", "检索关键词": p.get("query", ""), "标题命中": "是",
@@ -339,7 +340,8 @@ def build_part2():
                          "aggregator": "新闻聚合", "intl_media": "境外媒体",
                          "youtube": "YouTube视频", "other": "其他网站"}.get(st, st),
             "来源名称": pretty_source(r.get("source_name"), r.get("source_domain")),
-            "域名": r.get("source_domain", ""), "标题 / 正文": r.get("title", ""),
+            "域名": r.get("source_domain", ""), "标题": r.get("title", ""),
+            "正文": (a or {}).get("text", "") or "",
             "发布日期": fmt_date(r.get("published_at")), "采集日期": COLLECTED,
             "链接": url or r.get("google_link", ""), "播放量": "", "点赞数": "",
             "评论数": "", "时长(秒)": "", "检索关键词": r.get("keyword", ""),
@@ -351,7 +353,8 @@ def build_part2():
         rows.append({
             "平台": "YouTube", "采集通道": "YouTube 搜索", "来源类型": "YouTube视频",
             "来源名称": r.get("channel", ""), "域名": "youtube.com",
-            "标题 / 正文": r.get("title", ""), "发布日期": fmt_date(r.get("published_at")),
+            "标题": r.get("title", ""), "正文": (desc_by_vid.get(r.get("video_id")) or {}).get("description", "") or "",
+            "发布日期": fmt_date(r.get("published_at")),
             "采集日期": COLLECTED, "链接": r.get("url", ""),
             "播放量": norm(r.get("view_count")), "点赞数": norm(r.get("like_count")),
             "评论数": "", "时长(秒)": norm(r.get("duration_sec")),
@@ -362,29 +365,8 @@ def build_part2():
         })
     rows.sort(key=lambda x: (x["_sort"], x["平台"]))
 
-    body_rows = []
-    for a in articles:
-        if a.get("status") != "ok" or not a.get("text"):
-            continue
-        body_rows.append({
-            "平台": PLATFORM.get(a.get("source_type"), "其他网站"), "正文类型": "报道正文",
-            "来源名称": DOMAIN_NAME.get((a.get("domain") or "").lower(),
-                                    (a.get("domain") or "").replace("www.", "")),
-            "标题": a.get("title", ""), "发布日期": fmt_date(a.get("published_at")),
-            "链接": a.get("url", ""), "字数": a.get("text_len", 0),
-            "正文全文": (a.get("text") or "")[:30000],
-        })
-    for d in ytdesc:
-        if not d.get("description"):
-            continue
-        body_rows.append({
-            "平台": "YouTube", "正文类型": "视频简介", "来源名称": d.get("channel", ""),
-            "标题": d.get("title", ""), "发布日期": fmt_date(d.get("published_at")),
-            "链接": f"https://www.youtube.com/watch?v={d.get('video_id')}",
-            "字数": d.get("desc_len", 0), "正文全文": (d.get("description") or "")[:30000],
-        })
-    body_rows.sort(key=lambda x: x["发布日期"])
-    total_words = sum(r["字数"] or 0 for r in body_rows)
+    body_n = sum(1 for r in rows if (r.get("正文") or "").strip())
+    body_words = sum(len(r.get("正文") or "") for r in rows)
 
     wb = Workbook()
     ws = wb.active
@@ -396,7 +378,7 @@ def build_part2():
         ("采集时间范围", PERIOD),
         ("抓取日期", COLLECTED),
         ("内容条数", f"{len(rows)} 条"),
-        ("正文", f"{len(body_rows)} 篇，合计 {total_words:,} 字（见「报道正文」sheet）"),
+        ("正文全文", f"{body_n} 条有正文，合计 {body_words:,} 字（见「正文」列）"),
         ("数据来源", "Google News 索引（报社 / 电视台 / 网媒）｜ YouTube 搜索"),
     ], dist.most_common())
     write_sheet(wb.create_sheet("全部内容"), rows, COLS)
@@ -406,13 +388,9 @@ def build_part2():
     write_sheet(wb.create_sheet("电视台"), [r for r in rows if r["平台"] == "电视台"], COLS)
     write_sheet(wb.create_sheet("YouTube视频"), [r for r in rows if r["平台"] == "YouTube"
                                             and r["采集通道"] == "YouTube 搜索"], COLS)
-    write_sheet(wb.create_sheet("报道正文"), body_rows, [
-        ("序号", 7, "center"), ("平台", 13, "center"), ("正文类型", 12, "center"),
-        ("来源名称", 22, "left"), ("标题", 50, "left"), ("发布日期", 12, "center"),
-        ("链接", 40, "left"), ("字数", 8, "right"), ("正文全文", 120, "left")])
     write_stats(wb.create_sheet("平台统计"), rows)
     wb.save(OUT2)
-    return rows, len(body_rows), total_words
+    return rows, body_n, body_words
 
 
 # ---------------- 3. 评论与回复 ----------------
