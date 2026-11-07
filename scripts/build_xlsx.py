@@ -245,6 +245,7 @@ def build_part1():
     comments = load_jsonl(os.path.join(IG, "comments.jsonl"))
     th_posts = load_jsonl(os.path.join(TH, "posts.jsonl"))
     th_replies = load_jsonl(os.path.join(TH, "replies.jsonl"))
+    fb_posts = load_jsonl(os.path.join(DATA, "facebook", "posts.jsonl"))
     news = load_csv("google_news_2022-2026.csv")
     social = [r for r in news if r["source_type"] in ("facebook", "instagram", "threads")]
 
@@ -282,9 +283,24 @@ def build_part1():
             "时长(秒)": "", "检索关键词": p.get("query", ""), "标题命中": "是",
             "正文字数": len(txt), "备注": note, "_sort": fmt_date(p.get("published_at")),
         })
+    for p in fb_posts:
+        txt = p.get("text") or ""
+        note = "赞%s/评%s" % (p.get("reaction_count") or 0, p.get("comment_count") or 0)
+        if p.get("group"):
+            note += "｜群组 " + p["group"]
+        rows.append({
+            "平台": "Facebook", "采集通道": "Facebook 搜索", "来源类型": "Facebook贴文",
+            "来源名称": p.get("author") or "", "域名": "facebook.com",
+            "标题 / 正文": txt, "发布日期": fmt_date(p.get("published_at")),
+            "采集日期": COLLECTED, "链接": p.get("url", ""), "播放量": "",
+            "点赞数": norm(p.get("reaction_count")), "评论数": norm(p.get("comment_count")),
+            "时长(秒)": "", "检索关键词": p.get("query", ""), "标题命中": "是",
+            "正文字数": len(txt), "备注": note, "_sort": fmt_date(p.get("published_at")),
+        })
+    social_rows = []
     for r in social:
         st = r["source_type"]
-        rows.append({
+        social_rows.append({
             "平台": PLATFORM.get(st, st), "采集通道": "Google News 索引",
             "来源类型": SOURCE_TYPE_CN.get(st, st),
             "来源名称": pretty_source(r.get("source_name"), r.get("source_domain")),
@@ -326,8 +342,8 @@ def build_part1():
         ("采集时间范围", PERIOD),
         ("抓取日期", COLLECTED),
         ("内容条数", f"{len(rows)} 条（Instagram {dist['Instagram']} / Threads {dist['Threads']} / Facebook {dist['Facebook']}）"),
-        ("评论与回复", f"Instagram {len(crow)} 条 ｜ Threads {len(trow)} 条"),
-        ("数据来源", "Instagram 标签/关键词搜索（3 账号轮换）｜ Threads 关键词搜索 ｜ Facebook 仅有 Google News 索引线索"),
+        ("评论与回复", "Instagram %d 条 ｜ Threads %d 条（Facebook 按需求不采评论）" % (len(crow), len(trow))),
+        ("数据来源", "Instagram 标签/关键词搜索（3 账号轮换）｜ Threads 关键词搜索 ｜ Facebook 帖子搜索"),
         ("", ""),
         ("字段说明", ""),
         ("平台", "Instagram / Threads / Facebook"),
@@ -346,7 +362,8 @@ def build_part1():
     write_sheet(wb.create_sheet("Threads帖子"), [r for r in rows if r["平台"] == "Threads"
                                              and r["采集通道"] == "Threads 搜索"])
     write_sheet(wb.create_sheet("Threads回复"), trow, COMMENT_COLS)
-    write_sheet(wb.create_sheet("Facebook线索"), [r for r in rows if r["平台"] == "Facebook"])
+    write_sheet(wb.create_sheet("Facebook帖子"), [r for r in rows if r["采集通道"] == "Facebook 搜索"])
+    write_sheet(wb.create_sheet("Google News线索"), social_rows)
     write_stats(wb.create_sheet("平台统计"), rows)
     wb.save(OUT1)
     return len(rows), len(crow), len(trow)
