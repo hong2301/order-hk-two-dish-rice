@@ -81,18 +81,45 @@ note              备注（是否为转载、是否含商业推广等）
 
 > 采集时间：2026-11-05　｜　覆盖区间：2022-01-01 ~ 2026-10-31
 
-### 8.1 产出文件
+### 8.1 产出文件（需求 1 / 需求 2 已拆分为两份 Excel）
 
-| 文件 | 内容 | 规模 |
+**需求 1 · 社交平台** → `data/需求1_社交平台_兩餸飯_2022-2026.xlsx`（3.4 MB）
+
+| sheet | 行数 | 内容 |
 | --- | --- | --- |
-| `data/google_news_2022-2026.csv` | Google News 索引的报社、网媒、电视台、YouTube、FB/IG 帖文条目（含解码后的媒体原始链接） | **2162 条** |
-| `data/youtube_2022-2026.csv` | YouTube 视频元数据（精确上载日期、播放量、点赞、时长、频道、简介） | **327 条** |
-| `data/兩餸飯_跨平台传播_2022-2026.xlsx` | **汇总 Excel**：8 个 sheet（说明 / 全部数据 / Instagram帖子 / Instagram评论 / YouTube视频 / 报刊网媒 / 电视台 / 平台统计），内容表 17 列统一表头 | **3513 条内容 + 9352 条评论** |
-| `data/ig/posts.jsonl` | Instagram 帖子（标签 / 关键词搜索直采） | **1024 条** |
-| `data/ig/comments.jsonl` | Instagram 评论（一级 + 二级回复） | **9352 条** |
-| `data/summary.md` | 描述性统计摘要（类型 / 年份 / 来源域名 / 频道） | — |
-| `data/stats.json` | 同上的机器可读版 | — |
-| `data/raw/*.json` | 原始采集记录 | — |
+| 说明 | — | 口径、字段字典、平台分布 |
+| 全部内容 | 2817 | Instagram 1332 / Threads 1191 / Facebook 294 |
+| Instagram帖子 | 1024 | 标签 / 关键词搜索直采 |
+| Instagram评论 | 9230 | 一级 + 二级回复 |
+| Threads帖子 | 1191 | Threads 关键词搜索 |
+| Threads回复 | 1211 | 60 帖 |
+| Facebook线索 | 294 | **仅链接元数据，未采正文/评论** |
+| 平台统计 | — | 平台 × 年份 |
+
+**需求 2 · Google 检索与媒体** → `data/需求2_Google与媒体_兩餸飯_2022-2026.xlsx`（3.7 MB）
+
+| sheet | 行数 | 内容 |
+| --- | --- | --- |
+| 说明 | — | 口径、字段字典、平台分布 |
+| 全部内容 | 1868 | 报社网媒 / 电视台 / 生活媒体 / 聚合 / YouTube |
+| 报刊网媒 | 988 | 含生活饮食媒体与境外媒体 |
+| 电视台 | 225 | TVB / Now / 有线 / HOY / myTV PLUS / RTHK |
+| YouTube视频 | 327 | 播放量、点赞、时长 |
+| 报道正文 | **1355 篇 / 486.7 万字** | 报道全文 1088 + 视频简介 267 |
+| 平台统计 | — | 平台 × 年份 |
+
+**原始数据文件**
+
+| 文件 | 内容 |
+| --- | --- |
+| `data/google_news_2022-2026.csv` | Google News 索引条目（含解码后的媒体原始链接）2162 条 |
+| `data/youtube_2022-2026.csv` | YouTube 视频元数据 327 条 |
+| `data/articles.jsonl` | 报道正文全文（trafilatura 抽取） |
+| `data/youtube_details.jsonl` | 视频简介 + 点赞数 |
+| `data/ig/posts.jsonl` / `comments.jsonl` | Instagram 帖子 1024 / 评论 9230 |
+| `data/threads/posts.jsonl` / `replies.jsonl` | Threads 帖子 1191 / 回复 1211 |
+| `data/summary.md` / `stats.json` | 描述性统计（汇总版） |
+| `data/raw/*.json` | 原始采集记录 |
 
 ### 8.2 结构分布（Google 新闻集 2162 条）
 
@@ -116,18 +143,21 @@ note              备注（是否为转载、是否含商业推广等）
 - 主要频道：香港01、HOY 媒體網絡、星島頭條、TVB (official)、Mill MILK、觀塘食好嘢、高峰熱話、粵語最財經等
 - 日期精度：231 条取自视频页 `dateText`（精确到日），96 条由相对时间（「X 年前 / X 個月前」）估算，`date_source` 字段已标注
 
-### 8.3.1 Excel 汇总表
+### 8.3.1 表格结构
 
-`data/兩餸飯_跨平台传播_2022-2026.xlsx`（2489 行）统一为 16 列：
+两份 Excel 的内容表统一为 **18 列**：
 
 | 列 | 含义 |
 | --- | --- |
-| 序号 / 平台 / 采集通道 / 来源类型 | 记录编号与**平台标注**（Instagram / Facebook / Threads / YouTube / 电视台 / 报社网媒 / 生活饮食媒体 / 新闻聚合 / 境外媒体 / 其他网站） |
+| 序号 / 平台 / 采集通道 / 来源类型 | 记录编号与平台标注 |
 | 来源名称 / 域名 | 媒体名、频道名或账号，及站点域名 |
-| 标题 / 发布日期 / 采集日期 | 内容标题、发布时间（YYYY-MM-DD）、抓取日期 |
+| 标题 / 正文 | 报道标题、视频标题或社交贴文正文 |
+| 发布日期 / 采集日期 | 发布时间（YYYY-MM-DD）、抓取日期 |
 | 链接 | 可点击原始链接（Google News 链接已解码） |
-| 播放量 / 点赞数 / 时长(秒) | YouTube 专有指标，其余留空 |
-| 检索关键词 / 标题命中 / 备注 | 命中该条时的检索词、标题是否直含关键词、数据状态提示 |
+| 播放量 / 点赞数 / 评论数 / 时长(秒) | 平台互动指标，无则留空 |
+| 检索关键词 / 标题命中 | 命中该条时的检索词、标题是否直含关键词 |
+| 正文字数 | 已抓到正文的字符数（空 = 未抓或失败） |
+| 备注 | 数据状态提示 |
 
 格式：表头深蓝加粗居中、首行冻结、自动筛选、列宽按内容设定、隔行浅色底。
 
@@ -168,7 +198,7 @@ python scripts/fetch_youtube_desc.py    # YouTube 视频简介
 python scripts/threads_collect.py       # Threads 帖子
 python scripts/threads_collect_replies.py  # Threads 回复
 python scripts/build_summary.py         # 命中标记 + 统计
-python scripts/build_xlsx.py            # 生成汇总 Excel
+python scripts/build_xlsx.py            # 生成需求1 / 需求2 两份 Excel
 ```
 
 代理通过环境变量 `PROXY_URL` 指定（默认 `http://192.168.31.238:7897`）。采集带本地缓存（`.tmp/watch_cache.json`、`data/raw/url_decode_cache.json`），重跑不会重复请求。
@@ -257,3 +287,21 @@ python scripts/build_xlsx.py
 - Threads 2023-07 才上线，故 2022 年无数据
 - 回复按 `reply_count` 降序取前 150 帖，实际完成 60 帖达 **1211 条**后按用户要求停止
 - 后续如需扩量：`python scripts/threads_collect_replies.py --port 9225 --limit 300 --max-pages 2`
+
+---
+
+## 十一、交付现状与未做事项
+
+| 项 | 状态 |
+| --- | --- |
+| 需求 2：Google News 索引 2162 + YouTube 327 | ✅ 完成 |
+| 需求 2：报道正文 1088 篇 / 136 万字 | ✅ 完成（trafilatura 通用抽取） |
+| 需求 2：YouTube 视频简介 267 条 | ✅ 完成 |
+| 需求 1：Instagram 帖子 1024 + 评论 9230 | ✅ 完成 |
+| 需求 1：Threads 帖子 1191 + 回复 1211 | ✅ 完成（按需停止） |
+| 需求 1：Facebook 正文与评论 | ⏸ 未做（当前 294 条仅 Google News 链接线索） |
+| YouTube 视频字幕 | ❌ 已放弃（53 条试点后按用户决定停止，相关数据已从交付表中移除） |
+| Threads 2022–2023 年内容 | ⚠️ 平台 2023-07 才上线，全站检索仅能捞到 2023 年 5 条，无法补足 |
+
+**Threads 早期数据说明**：Threads 于 2023 年 7 月上线，2022 年不存在任何内容；2023 年中文「兩餸飯」相关贴文在全站范围内极少，
+现有搜索接口（相关性排序 / 近期排序）均无法回溯到 2023 年，账号时间线亦无早期内容。故 2023 年仅保留实际采集到的 5 条。
