@@ -1,14 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""把采集结果分成两份 Excel（需求1 / 需求2 分开）。
+"""生成 3 份交付 Excel + 1 份统计说明。
 
-需求 1（社交平台）：
-  data/需求1_社交平台_兩餸飯_2022-2026.xlsx
-  Instagram 帖子 + 评论、Threads 帖子 + 回复、Facebook 线索
-
-需求 2（Google 检索与媒体）：
-  data/需求2_Google与媒体_兩餸飯_2022-2026.xlsx
-  报社 / 电视台 / 生活媒体 / 新闻聚合 / YouTube，以及报道正文全文
+  1) data/1_社交平台_帖子_兩餸飯_2022-2026.xlsx   Instagram / Threads / Facebook 帖子
+  2) data/2_Google与媒体_兩餸飯_2022-2026.xlsx    报社 / 电视台 / 生活媒体 / YouTube
+  3) data/3_评论与回复_兩餸飯_2022-2026.xlsx       IG 评论 + Threads 回复（关联到帖子）
+  4) data/采集统计.md                              数据量统计
 
 用法：python scripts/build_xlsx.py
 """
@@ -26,11 +23,17 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(BASE, "data")
 IG = os.path.join(DATA, "ig")
 TH = os.path.join(DATA, "threads")
-OUT1 = os.path.join(DATA, "需求1_社交平台_兩餸飯_2022-2026.xlsx")
-OUT2 = os.path.join(DATA, "需求2_Google与媒体_兩餸飯_2022-2026.xlsx")
+FB = os.path.join(DATA, "facebook")
+
+OUT1 = os.path.join(DATA, "1_社交平台_帖子_兩餸飯_2022-2026.xlsx")
+OUT2 = os.path.join(DATA, "2_Google与媒体_兩餸飯_2022-2026.xlsx")
+OUT3 = os.path.join(DATA, "3_评论与回复_兩餸飯_2022-2026.xlsx")
+OUTMD = os.path.join(DATA, "采集统计.md")
+
 COLLECTED = "2026-11-07"
 PERIOD = "2022-01-01 ~ 2026-10-31"
 
+# 内容表（需求1 / 需求2 共用）
 COLS = [
     ("序号", 7, "center"),
     ("平台", 13, "center"),
@@ -52,31 +55,23 @@ COLS = [
     ("备注", 30, "left"),
 ]
 
+# 评论表
 COMMENT_COLS = [
     ("序号", 7, "center"),
     ("平台", 11, "center"),
     ("帖子链接", 42, "left"),
+    ("帖子 ID", 20, "left"),
+    ("帖子作者", 18, "left"),
     ("帖子发布日期", 13, "center"),
+    ("帖子正文摘要", 46, "left"),
     ("层级", 7, "center"),
     ("父评论 ID", 18, "left"),
-    ("评论者", 20, "left"),
-    ("评论内容", 60, "left"),
+    ("评论者", 18, "left"),
+    ("评论内容", 58, "left"),
     ("评论日期", 12, "center"),
     ("点赞数", 9, "right"),
     ("子回复数", 9, "right"),
     ("采集日期", 12, "center"),
-]
-
-BODY_COLS = [
-    ("序号", 7, "center"),
-    ("平台", 13, "center"),
-    ("正文类型", 12, "center"),
-    ("来源名称", 22, "left"),
-    ("标题", 50, "left"),
-    ("发布日期", 12, "center"),
-    ("链接", 40, "left"),
-    ("字数", 8, "right"),
-    ("正文全文", 120, "left"),
 ]
 
 PLATFORM = {
@@ -85,13 +80,6 @@ PLATFORM = {
     "aggregator": "新闻聚合", "intl_media": "境外媒体",
     "social_other": "其他社交平台", "other": "其他网站",
 }
-SOURCE_TYPE_CN = {
-    "news": "报社网媒", "tv": "电视台", "lifestyle": "生活媒体", "youtube": "YouTube视频",
-    "youtube_video": "YouTube视频", "ig_post": "IG贴文", "facebook": "Facebook",
-    "instagram": "Instagram", "threads": "Threads", "aggregator": "新闻聚合",
-    "intl_media": "境外媒体", "other": "其他网站", "social_other": "其他社交",
-}
-MEDIA_TYPE = {1: "单图", 2: "视频", 8: "多图"}
 DOMAIN_NAME = {
     "i-cable.com": "有线新闻", "www.i-cable.com": "有线新闻", "tvb.com": "TVB",
     "news.tvb.com": "TVB 新闻", "programme.tvb.com": "TVB 节目", "mytvsuper.com": "myTV SUPER",
@@ -108,6 +96,7 @@ DOMAIN_NAME = {
     "hk.news.yahoo.com": "Yahoo 新闻", "youtube.com": "YouTube",
     "instagram.com": "Instagram", "facebook.com": "Facebook", "threads.com": "Threads",
 }
+MEDIA_TYPE = {1: "单图", 2: "视频", 8: "多图"}
 THIN = Side(style="thin", color="BFBFBF")
 BORDER = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 
@@ -121,14 +110,13 @@ def load_jsonl(path):
     out = []
     if not os.path.exists(path):
         return out
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                try:
-                    out.append(json.loads(line))
-                except Exception:
-                    pass
+    for line in open(path, encoding="utf-8"):
+        line = line.strip()
+        if line:
+            try:
+                out.append(json.loads(line))
+            except Exception:
+                pass
     return out
 
 
@@ -145,6 +133,8 @@ def fmt_date(s):
 def norm(v):
     if v is None or v == "":
         return ""
+    if isinstance(v, dict):
+        v = v.get("count") or v.get("total_count")
     try:
         return int(float(v))
     except Exception:
@@ -161,7 +151,7 @@ def pretty_source(name, domain):
     return name
 
 
-def write_sheet(ws, rows, cols=COLS):
+def write_sheet(ws, rows, cols):
     for i, (name, width, align) in enumerate(cols, start=1):
         c = ws.cell(row=1, column=i, value=name)
         c.font = Font(bold=True, color="FFFFFF", size=11, name="Microsoft YaHei")
@@ -171,14 +161,14 @@ def write_sheet(ws, rows, cols=COLS):
         ws.column_dimensions[get_column_letter(i)].width = width
     ws.row_dimensions[1].height = 24
     ws.freeze_panes = "A2"
+    wrap = {"标题 / 正文", "评论内容", "帖子正文摘要"}
     for idx, r in enumerate(rows, start=1):
         vals = [idx] + [r.get(n, "") for n, _, _ in cols[1:]]
         for j, v in enumerate(vals, start=1):
             name, _, align = cols[j - 1]
             c = ws.cell(row=idx + 1, column=j, value=v)
             c.font = Font(size=10, name="Microsoft YaHei")
-            c.alignment = Alignment(horizontal=align, vertical="center",
-                                    wrap_text=name in ("标题 / 正文", "评论内容", "正文全文"))
+            c.alignment = Alignment(horizontal=align, vertical="center", wrap_text=name in wrap)
             c.border = BORDER
             if name == "链接" and v:
                 c.hyperlink = v
@@ -191,11 +181,11 @@ def write_sheet(ws, rows, cols=COLS):
 
 def write_info(ws, lines, dist, dist_title="平台分布"):
     for i, (k, v) in enumerate(lines, start=1):
-        kc = ws.cell(row=i, column=1, value=k)
-        kc.font = Font(bold=(i == 1), size=14 if i == 1 else 10, name="Microsoft YaHei")
+        ws.cell(row=i, column=1, value=k).font = Font(
+            bold=(i == 1), size=14 if i == 1 else 10, name="Microsoft YaHei")
         ws.cell(row=i, column=2, value=v).font = Font(size=10, name="Microsoft YaHei")
     ws.column_dimensions["A"].width = 20
-    ws.column_dimensions["B"].width = 95
+    ws.column_dimensions["B"].width = 92
     row = len(lines) + 2
     ws.cell(row=row, column=1, value=dist_title).font = Font(bold=True, size=11, name="Microsoft YaHei")
     for i, (k, v) in enumerate(dist, start=row + 1):
@@ -203,23 +193,22 @@ def write_info(ws, lines, dist, dist_title="平台分布"):
         ws.cell(row=i, column=2, value=f"{v} 条").font = Font(size=10, name="Microsoft YaHei")
 
 
-def write_stats(ws, rows, years=("2022", "2023", "2024", "2025", "2026")):
+def write_stats(ws, rows, years=("2022", "2023", "2024", "2025", "2026"), date_key="发布日期"):
     pc = Counter(r["平台"] for r in rows)
-    header = ["平台"] + list(years) + ["合计"]
-    for j, h in enumerate(header, start=1):
+    for j, h in enumerate(["平台"] + list(years) + ["合计"], start=1):
         c = ws.cell(row=1, column=j, value=h)
         c.font = Font(bold=True, color="FFFFFF", size=11, name="Microsoft YaHei")
         c.fill = PatternFill("solid", fgColor="1F4E79")
         c.alignment = Alignment(horizontal="center", vertical="center")
         c.border = BORDER
     ws.column_dimensions["A"].width = 20
-    for j in range(2, len(header) + 1):
+    for j in range(2, len(years) + 3):
         ws.column_dimensions[get_column_letter(j)].width = 11
     r_i = 2
     for p, _ in pc.most_common():
         sub = [r for r in rows if r["平台"] == p]
-        counts = [sum(1 for r in sub if r["发布日期"].startswith(y)) for y in years]
-        for j, v in enumerate([p] + counts + [len(sub)], start=1):
+        vals = [p] + [sum(1 for r in sub if r[date_key].startswith(y)) for y in years] + [len(sub)]
+        for j, v in enumerate(vals, start=1):
             c = ws.cell(row=r_i, column=j, value=v)
             c.font = Font(size=10, name="Microsoft YaHei")
             c.alignment = Alignment(horizontal="center" if j > 1 else "left", vertical="center")
@@ -227,8 +216,8 @@ def write_stats(ws, rows, years=("2022", "2023", "2024", "2025", "2026")):
             if r_i % 2 == 0:
                 c.fill = PatternFill("solid", fgColor="F2F7FB")
         r_i += 1
-    totals = ["合计"] + [sum(1 for r in rows if r["发布日期"].startswith(y)) for y in years] + [len(rows)]
-    for j, v in enumerate(totals, start=1):
+    vals = ["合计"] + [sum(1 for r in rows if r[date_key].startswith(y)) for y in years] + [len(rows)]
+    for j, v in enumerate(vals, start=1):
         c = ws.cell(row=r_i, column=j, value=v)
         c.font = Font(bold=True, size=10, name="Microsoft YaHei")
         c.fill = PatternFill("solid", fgColor="DDEBF7")
@@ -238,44 +227,43 @@ def write_stats(ws, rows, years=("2022", "2023", "2024", "2025", "2026")):
     return pc
 
 
-# ---------------- 需求 1：社交平台 ----------------
+def blank(s=""):
+    return {"平台": s, "采集通道": "", "来源类型": "", "来源名称": "", "域名": "",
+            "标题 / 正文": "", "发布日期": "", "采集日期": "", "链接": "",
+            "播放量": "", "点赞数": "", "评论数": "", "时长(秒)": "",
+            "检索关键词": "", "标题命中": "", "正文字数": "", "备注": ""}
+
+
+# ---------------- 1. 社交平台帖子 ----------------
 
 def build_part1():
     posts = load_jsonl(os.path.join(IG, "posts.jsonl"))
-    comments = load_jsonl(os.path.join(IG, "comments.jsonl"))
     th_posts = load_jsonl(os.path.join(TH, "posts.jsonl"))
-    th_replies = load_jsonl(os.path.join(TH, "replies.jsonl"))
-    fb_posts = load_jsonl(os.path.join(DATA, "facebook", "posts.jsonl"))
-    news = load_csv("google_news_2022-2026.csv")
-    social = [r for r in news if r["source_type"] in ("facebook", "instagram", "threads")]
+    fb_posts = load_jsonl(os.path.join(FB, "posts.jsonl"))
 
     rows = []
     for p in posts:
-        ch = "IG 标签搜索" if str(p.get("query", "")).startswith("#") else "IG 关键词搜索"
+        txt = (p.get("caption") or "").strip()
         mt = MEDIA_TYPE.get(p.get("media_type"), "")
         note = mt
         if p.get("carousel_count") and p["carousel_count"] > 1:
             note += f"×{p['carousel_count']}"
-        if p.get("hashtags"):
-            note += f"｜#{p['hashtags'].replace(',', ' #')}"
         rows.append({
-            "平台": "Instagram", "采集通道": ch, "来源类型": SOURCE_TYPE_CN["ig_post"],
-            "来源名称": p.get("user_username") or "", "域名": "instagram.com",
-            "标题 / 正文": (p.get("caption") or "").strip(),
+            "平台": "Instagram",
+            "采集通道": "IG 标签搜索" if str(p.get("query", "")).startswith("#") else "IG 关键词搜索",
+            "来源类型": "IG 贴文", "来源名称": p.get("user_username") or "",
+            "域名": "instagram.com", "标题 / 正文": txt,
             "发布日期": fmt_date(p.get("published_at")), "采集日期": COLLECTED,
             "链接": p.get("url", ""), "播放量": norm(p.get("view_count")),
             "点赞数": norm(p.get("like_count")), "评论数": norm(p.get("comment_count")),
             "时长(秒)": "", "检索关键词": p.get("query", ""), "标题命中": "是",
-            "正文字数": len(p.get("caption") or ""), "备注": note,
-            "_sort": fmt_date(p.get("published_at")),
+            "正文字数": len(txt), "备注": note, "_sort": fmt_date(p.get("published_at")),
         })
     for p in th_posts:
         txt = p.get("text") or ""
         note = f"赞{p.get('like_count') or 0}/回复{p.get('reply_count') or 0}/转发{p.get('repost_count') or 0}"
-        if p.get("hashtags"):
-            note += f"｜#{p['hashtags'].replace(',', ' #')}"
         rows.append({
-            "平台": "Threads", "采集通道": "Threads 搜索", "来源类型": SOURCE_TYPE_CN["threads"],
+            "平台": "Threads", "采集通道": "Threads 搜索", "来源类型": "Threads 贴文",
             "来源名称": p.get("user_username") or "", "域名": "threads.com",
             "标题 / 正文": txt, "发布日期": fmt_date(p.get("published_at")),
             "采集日期": COLLECTED, "链接": p.get("url", ""), "播放量": "",
@@ -285,11 +273,11 @@ def build_part1():
         })
     for p in fb_posts:
         txt = p.get("text") or ""
-        note = "赞%s/评%s" % (p.get("reaction_count") or 0, p.get("comment_count") or 0)
+        note = f"赞{p.get('reaction_count') or 0}/评{p.get('comment_count') or 0}"
         if p.get("group"):
             note += "｜群组 " + p["group"]
         rows.append({
-            "平台": "Facebook", "采集通道": "Facebook 搜索", "来源类型": "Facebook贴文",
+            "平台": "Facebook", "采集通道": "Facebook 搜索", "来源类型": "Facebook 贴文",
             "来源名称": p.get("author") or "", "域名": "facebook.com",
             "标题 / 正文": txt, "发布日期": fmt_date(p.get("published_at")),
             "采集日期": COLLECTED, "链接": p.get("url", ""), "播放量": "",
@@ -297,79 +285,32 @@ def build_part1():
             "时长(秒)": "", "检索关键词": p.get("query", ""), "标题命中": "是",
             "正文字数": len(txt), "备注": note, "_sort": fmt_date(p.get("published_at")),
         })
-    social_rows = []
-    for r in social:
-        st = r["source_type"]
-        social_rows.append({
-            "平台": PLATFORM.get(st, st), "采集通道": "Google News 索引",
-            "来源类型": SOURCE_TYPE_CN.get(st, st),
-            "来源名称": pretty_source(r.get("source_name"), r.get("source_domain")),
-            "域名": r.get("source_domain", ""), "标题 / 正文": r.get("title", ""),
-            "发布日期": fmt_date(r.get("published_at")), "采集日期": COLLECTED,
-            "链接": r.get("url") or r.get("google_link", ""), "播放量": "", "点赞数": "",
-            "评论数": "", "时长(秒)": "", "检索关键词": r.get("keyword", ""),
-            "标题命中": "是" if r.get("title_hit") == "1" else "否", "正文字数": "",
-            "备注": "链接线索，未采正文/评论", "_sort": fmt_date(r.get("published_at")),
-        })
     rows.sort(key=lambda x: (x["_sort"], x["平台"]))
-
-    # 评论 / 回复
-    crow = [{
-        "平台": "Instagram", "帖子链接": c.get("post_url", ""),
-        "帖子发布日期": c.get("post_published_at", ""),
-        "层级": "一级" if c.get("level") == 1 else "回复",
-        "父评论 ID": c.get("parent_pk", ""), "评论者": c.get("user_username", ""),
-        "评论内容": c.get("text", ""), "评论日期": fmt_date(c.get("published_at")),
-        "点赞数": norm(c.get("like_count")), "子回复数": norm(c.get("child_count")),
-        "采集日期": COLLECTED,
-    } for c in comments]
-    trow = [{
-        "平台": "Threads", "帖子链接": f"https://www.threads.com/post/{c.get('post_code')}",
-        "帖子发布日期": c.get("post_published_at", ""), "层级": "回复",
-        "父评论 ID": c.get("parent_pk", ""), "评论者": c.get("user_username", ""),
-        "评论内容": c.get("text", ""), "评论日期": fmt_date(c.get("published_at")),
-        "点赞数": norm(c.get("like_count")), "子回复数": norm(c.get("reply_count")),
-        "采集日期": COLLECTED,
-    } for c in th_replies]
 
     wb = Workbook()
     ws = wb.active
     ws.title = "说明"
     dist = Counter(r["平台"] for r in rows)
     write_info(ws, [
-        ("需求 1 · 社交平台「兩餸飯」贴文与评论", ""),
+        ("需求 1 · 社交平台「兩餸飯」帖子", ""),
         ("", ""),
         ("采集时间范围", PERIOD),
         ("抓取日期", COLLECTED),
-        ("内容条数", f"{len(rows)} 条（Instagram {dist['Instagram']} / Threads {dist['Threads']} / Facebook {dist['Facebook']}）"),
-        ("评论与回复", "Instagram %d 条 ｜ Threads %d 条（Facebook 按需求不采评论）" % (len(crow), len(trow))),
-        ("数据来源", "Instagram 标签/关键词搜索（3 账号轮换）｜ Threads 关键词搜索 ｜ Facebook 帖子搜索"),
-        ("", ""),
-        ("字段说明", ""),
-        ("平台", "Instagram / Threads / Facebook"),
-        ("采集通道", "IG 标签搜索 / IG 关键词搜索 / Threads 搜索 / Google News 索引"),
-        ("来源名称", "IG 或 Threads 账号；Facebook 为页面名"),
-        ("标题 / 正文", "贴文正文（caption / text），已过滤掉与「兩餸飯」无关的内容"),
-        ("播放量 / 点赞数 / 评论数", "IG、Threads 的互动数据；Facebook 线索为空"),
-        ("检索关键词", "命中该贴文时使用的标签或关键词"),
-        ("正文字数", "贴文正文字符数"),
-        ("备注", "媒体形态、话题标签、互动摘要"),
+        ("帖子总数", f"{len(rows)} 条"),
+        ("数据来源", "Instagram（标签/关键词搜索）｜ Threads（关键词搜索）｜ Facebook（帖子搜索）"),
+        ("说明", "评论与回复见「3_评论与回复」文件"),
     ], dist.most_common())
-    write_sheet(wb.create_sheet("全部内容"), rows)
-    write_sheet(wb.create_sheet("Instagram帖子"), [r for r in rows if r["平台"] == "Instagram"
-                                              and r["采集通道"].startswith("IG")])
-    write_sheet(wb.create_sheet("Instagram评论"), crow, COMMENT_COLS)
-    write_sheet(wb.create_sheet("Threads帖子"), [r for r in rows if r["平台"] == "Threads"
-                                             and r["采集通道"] == "Threads 搜索"])
-    write_sheet(wb.create_sheet("Threads回复"), trow, COMMENT_COLS)
-    write_sheet(wb.create_sheet("Facebook帖子"), [r for r in rows if r["采集通道"] == "Facebook 搜索"])
-    write_sheet(wb.create_sheet("Google News线索"), social_rows)
+    write_sheet(wb.create_sheet("全部帖子"), rows, COLS)
+    for name, plat in (("Instagram", "Instagram"), ("Threads", "Threads"), ("Facebook", "Facebook")):
+        sub = [r for r in rows if r["平台"] == plat]
+        if sub:
+            write_sheet(wb.create_sheet(name), sub, COLS)
     write_stats(wb.create_sheet("平台统计"), rows)
     wb.save(OUT1)
-    return len(rows), len(crow), len(trow)
+    return rows
 
 
-# ---------------- 需求 2：Google 检索与媒体 ----------------
+# ---------------- 2. Google 与媒体 ----------------
 
 def build_part2():
     news = load_csv("google_news_2022-2026.csv")
@@ -382,61 +323,42 @@ def build_part2():
         if a.get("status") == "ok" and a.get("text"):
             art_by_url.setdefault(a["url"], a)
     desc_by_vid = {d["video_id"]: d for d in ytdesc if d.get("description")}
-
-    media = [r for r in news if r["source_type"] in ("news", "tv", "lifestyle", "aggregator", "intl_media")]
     yt_ids = {r["video_id"] for r in yt}
-    rows = []
 
-    for r in media:
+    rows = []
+    for r in news:
         st = r["source_type"]
+        if st in ("facebook", "instagram", "threads"):
+            continue
         url = r.get("url", "")
-        remark = ""
-        if not url:
-            remark = "原链接解码失败，链接列为 Google News 跳转"
+        remark = "原链接解码失败" if not url else ""
         a = art_by_url.get(url)
         rows.append({
             "平台": PLATFORM.get(st, "其他网站"), "采集通道": "Google News",
-            "来源类型": SOURCE_TYPE_CN.get(st, st),
+            "来源类型": {"news": "报社网媒", "tv": "电视台", "lifestyle": "生活媒体",
+                         "aggregator": "新闻聚合", "intl_media": "境外媒体",
+                         "youtube": "YouTube视频", "other": "其他网站"}.get(st, st),
             "来源名称": pretty_source(r.get("source_name"), r.get("source_domain")),
             "域名": r.get("source_domain", ""), "标题 / 正文": r.get("title", ""),
-            "发布日期": fmt_date(r.get("published_at", "")), "采集日期": COLLECTED,
+            "发布日期": fmt_date(r.get("published_at")), "采集日期": COLLECTED,
             "链接": url or r.get("google_link", ""), "播放量": "", "点赞数": "",
             "评论数": "", "时长(秒)": "", "检索关键词": r.get("keyword", ""),
             "标题命中": "是" if r.get("title_hit") == "1" else "否",
             "正文字数": (a or {}).get("text_len", "") or "",
-            "备注": remark, "_sort": fmt_date(r.get("published_at", "")),
-        })
-    for r in news:
-        if r["source_type"] != "youtube":
-            continue
-        url = r.get("url", "")
-        vid = url.split("v=")[-1].split("&")[0] if "watch?v=" in url else ""
-        remark = "Google News 索引的视频页"
-        if vid in yt_ids:
-            remark += "；另有详细元数据"
-        rows.append({
-            "平台": "YouTube", "采集通道": "Google News", "来源类型": "YouTube视频",
-            "来源名称": pretty_source(r.get("source_name"), r.get("source_domain")),
-            "域名": "youtube.com", "标题 / 正文": r.get("title", ""),
-            "发布日期": fmt_date(r.get("published_at", "")), "采集日期": COLLECTED,
-            "链接": url, "播放量": "", "点赞数": "", "评论数": "", "时长(秒)": "",
-            "检索关键词": r.get("keyword", ""),
-            "标题命中": "是" if r.get("title_hit") == "1" else "否", "正文字数": "",
-            "备注": remark, "_sort": fmt_date(r.get("published_at", "")),
+            "备注": remark, "_sort": fmt_date(r.get("published_at")),
         })
     for r in yt:
         rows.append({
             "平台": "YouTube", "采集通道": "YouTube 搜索", "来源类型": "YouTube视频",
             "来源名称": r.get("channel", ""), "域名": "youtube.com",
-            "标题 / 正文": r.get("title", ""), "发布日期": fmt_date(r.get("published_at", "")),
+            "标题 / 正文": r.get("title", ""), "发布日期": fmt_date(r.get("published_at")),
             "采集日期": COLLECTED, "链接": r.get("url", ""),
             "播放量": norm(r.get("view_count")), "点赞数": norm(r.get("like_count")),
             "评论数": "", "时长(秒)": norm(r.get("duration_sec")),
             "检索关键词": r.get("query", ""),
             "标题命中": "是" if r.get("title_hit") == "1" else "否",
             "正文字数": (desc_by_vid.get(r.get("video_id")) or {}).get("desc_len", "") or "",
-            "备注": "精确日期" if r.get("date_source") == "watch_page" else "日期由相对时间估算",
-            "_sort": fmt_date(r.get("published_at", "")),
+            "备注": "", "_sort": fmt_date(r.get("published_at")),
         })
     rows.sort(key=lambda x: (x["_sort"], x["平台"]))
 
@@ -462,49 +384,172 @@ def build_part2():
             "字数": d.get("desc_len", 0), "正文全文": (d.get("description") or "")[:30000],
         })
     body_rows.sort(key=lambda x: x["发布日期"])
+    total_words = sum(r["字数"] or 0 for r in body_rows)
 
     wb = Workbook()
     ws = wb.active
     ws.title = "说明"
     dist = Counter(r["平台"] for r in rows)
-    total_words = sum(r["字数"] or 0 for r in body_rows)
     write_info(ws, [
         ("需求 2 · Google 检索与媒体「兩餸飯」报道、节目与视频", ""),
         ("", ""),
         ("采集时间范围", PERIOD),
         ("抓取日期", COLLECTED),
         ("内容条数", f"{len(rows)} 条"),
-        ("正文", f"{len(body_rows)} 篇，合计 {total_words:,} 字"),
-        ("数据来源", "Google News 索引（报社/电视台/网媒）｜ YouTube 搜索（视频元数据、简介、字幕）"),
-        ("", ""),
-        ("字段说明", ""),
-        ("平台", "报社 / 网媒、电视台、生活饮食媒体、新闻聚合、境外媒体、YouTube"),
-        ("采集通道", "Google News / YouTube 搜索"),
-        ("来源名称", "媒体名、电视台频道名或 YouTube 频道"),
-        ("标题 / 正文", "报道标题或视频标题（正文全文见「报道正文」sheet）"),
-        ("发布日期", "发布时间 YYYY-MM-DD（Google News 为原发布日，YouTube 为上载日）"),
-        ("播放量 / 点赞数", "仅 YouTube 有值"),
-        ("正文字数", "该条已抓到的正文（报道全文或视频简介）字符数，空 = 未抓或抓取失败"),
-        ("备注", "链接状态、日期精度等提示"),
+        ("正文", f"{len(body_rows)} 篇，合计 {total_words:,} 字（见「报道正文」sheet）"),
+        ("数据来源", "Google News 索引（报社 / 电视台 / 网媒）｜ YouTube 搜索"),
     ], dist.most_common())
-    write_sheet(wb.create_sheet("全部内容"), rows)
-    write_sheet(wb.create_sheet("报刊网媒"), [r for r in rows if r["平台"] in
-                                         ("报社 / 网媒", "生活饮食媒体", "境外媒体", "其他网站", "新闻聚合")])
-    write_sheet(wb.create_sheet("电视台"), [r for r in rows if r["平台"] == "电视台"])
-    write_sheet(wb.create_sheet("YouTube视频"), [r for r in rows if r["采集通道"] == "YouTube 搜索"])
-    write_sheet(wb.create_sheet("报道正文"), body_rows, BODY_COLS)
+    write_sheet(wb.create_sheet("全部内容"), rows, COLS)
+    write_sheet(wb.create_sheet("报刊网媒"),
+                [r for r in rows if r["平台"] in ("报社 / 网媒", "生活饮食媒体", "境外媒体",
+                                              "其他网站", "新闻聚合")], COLS)
+    write_sheet(wb.create_sheet("电视台"), [r for r in rows if r["平台"] == "电视台"], COLS)
+    write_sheet(wb.create_sheet("YouTube视频"), [r for r in rows if r["平台"] == "YouTube"
+                                            and r["采集通道"] == "YouTube 搜索"], COLS)
+    write_sheet(wb.create_sheet("报道正文"), body_rows, [
+        ("序号", 7, "center"), ("平台", 13, "center"), ("正文类型", 12, "center"),
+        ("来源名称", 22, "left"), ("标题", 50, "left"), ("发布日期", 12, "center"),
+        ("链接", 40, "left"), ("字数", 8, "right"), ("正文全文", 120, "left")])
     write_stats(wb.create_sheet("平台统计"), rows)
     wb.save(OUT2)
-    return len(rows), len(body_rows), total_words
+    return rows, len(body_rows), total_words
+
+
+# ---------------- 3. 评论与回复 ----------------
+
+def build_part3():
+    posts = load_jsonl(os.path.join(IG, "posts.jsonl"))
+    comments = load_jsonl(os.path.join(IG, "comments.jsonl"))
+    th_posts = load_jsonl(os.path.join(TH, "posts.jsonl"))
+    th_replies = load_jsonl(os.path.join(TH, "replies.jsonl"))
+
+    ig_map = {str(p["pk"]): p for p in posts}
+    th_map = {str(p["pk"]): p for p in th_posts}
+
+    rows = []
+    for c in comments:
+        p = ig_map.get(str(c.get("post_pk")), {})
+        txt = (p.get("caption") or "").strip()
+        rows.append({
+            "平台": "Instagram", "帖子链接": c.get("post_url", ""),
+            "帖子 ID": c.get("post_code", ""), "帖子作者": p.get("user_username", ""),
+            "帖子发布日期": fmt_date(c.get("post_published_at")),
+            "帖子正文摘要": txt[:80],
+            "层级": "一级" if c.get("level") == 1 else "回复",
+            "父评论 ID": c.get("parent_pk", ""), "评论者": c.get("user_username", ""),
+            "评论内容": c.get("text", ""), "评论日期": fmt_date(c.get("published_at")),
+            "点赞数": norm(c.get("like_count")), "子回复数": norm(c.get("child_count")),
+            "采集日期": COLLECTED, "_sort": fmt_date(c.get("published_at")),
+        })
+    for c in th_replies:
+        p = th_map.get(str(c.get("post_pk")), {})
+        txt = (p.get("text") or "").strip()
+        rows.append({
+            "平台": "Threads", "帖子链接": f"https://www.threads.com/post/{c.get('post_code')}",
+            "帖子 ID": c.get("post_code", ""), "帖子作者": p.get("user_username", ""),
+            "帖子发布日期": fmt_date(c.get("post_published_at")),
+            "帖子正文摘要": txt[:80], "层级": "回复",
+            "父评论 ID": c.get("parent_pk", ""), "评论者": c.get("user_username", ""),
+            "评论内容": c.get("text", ""), "评论日期": fmt_date(c.get("published_at")),
+            "点赞数": norm(c.get("like_count")), "子回复数": norm(c.get("reply_count")),
+            "采集日期": COLLECTED, "_sort": fmt_date(c.get("published_at")),
+        })
+    rows.sort(key=lambda x: (x["_sort"], x["平台"]))
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "说明"
+    dist = Counter(r["平台"] for r in rows)
+    ig_posts_n = len({r["帖子 ID"] for r in rows if r["平台"] == "Instagram"})
+    th_posts_n = len({r["帖子 ID"] for r in rows if r["平台"] == "Threads"})
+    write_info(ws, [
+        ("需求 1 · 社交平台「兩餸飯」评论与回复", ""),
+        ("", ""),
+        ("评论时间范围", PERIOD),
+        ("抓取日期", COLLECTED),
+        ("评论总数", f"{len(rows)} 条"),
+        ("覆盖帖子", f"Instagram {ig_posts_n} 帖 ｜ Threads {th_posts_n} 帖"),
+        ("数据来源", "Instagram 帖子评论（一级 + 二级回复）｜ Threads 帖子回复"),
+        ("匹配方式", "「帖子链接」「帖子 ID」对应「1_社交平台_帖子」中的记录，可直接用 VLOOKUP 关联"),
+        ("说明", "Facebook 按需求不采评论"),
+    ], dist.most_common(), "平台分布")
+    write_sheet(wb.create_sheet("全部评论"), rows, COMMENT_COLS)
+    for plat in ("Instagram", "Threads"):
+        sub = [r for r in rows if r["平台"] == plat]
+        if sub:
+            write_sheet(wb.create_sheet(plat), sub, COMMENT_COLS)
+    write_stats(wb.create_sheet("平台统计"), rows, date_key="评论日期")
+    wb.save(OUT3)
+    return rows
+
+
+# ---------------- 4. 统计 md ----------------
+
+def build_md(rows1, rows2, body_n, body_words, rows3):
+    def ystat(rows):
+        return {y: sum(1 for r in rows if r["发布日期"].startswith(y)) for y in
+                ("2022", "2023", "2024", "2025", "2026")}
+
+    L = []
+    A = L.append
+    A("# 数据采集统计\n")
+    A(f"- 时间范围：**{PERIOD}**")
+    A(f"- 抓取日期：{COLLECTED}\n")
+
+    A("## 一、需求 1 · 社交平台帖子\n")
+    A(f"合计 **{len(rows1)} 条**（`1_社交平台_帖子_兩餸飯_2022-2026.xlsx`）\n")
+    A("| 平台 | 帖子 | 2022 | 2023 | 2024 | 2025 | 2026 |")
+    A("| --- | --- | --- | --- | --- | --- | --- |")
+    for p in ("Instagram", "Threads", "Facebook"):
+        sub = [r for r in rows1 if r["平台"] == p]
+        s = ystat(sub)
+        A(f"| {p} | {len(sub)} | " + " | ".join(str(s[y]) for y in s) + " |")
+    s = ystat(rows1)
+    A(f"| **合计** | **{len(rows1)}** | " + " | ".join(f"**{s[y]}**" for y in s) + " |\n")
+
+    A("## 二、需求 2 · Google 与媒体\n")
+    A(f"合计 **{len(rows2)} 条**（`2_Google与媒体_兩餸飯_2022-2026.xlsx`）\n")
+    A("| 平台 | 条数 | 2022 | 2023 | 2024 | 2025 | 2026 |")
+    A("| --- | --- | --- | --- | --- | --- | --- |")
+    for p in ("报社 / 网媒", "电视台", "生活饮食媒体", "YouTube", "新闻聚合", "境外媒体", "其他网站"):
+        sub = [r for r in rows2 if r["平台"] == p]
+        if not sub:
+            continue
+        s = ystat(sub)
+        A(f"| {p} | {len(sub)} | " + " | ".join(str(s[y]) for y in s) + " |")
+    s = ystat(rows2)
+    A(f"| **合计** | **{len(rows2)}** | " + " | ".join(f"**{s[y]}**" for y in s) + " |")
+    A(f"\n正文全文：**{body_n} 篇 / {body_words:,} 字**（报道正文 + 视频简介）\n")
+
+    A("## 三、评论与回复\n")
+    A(f"合计 **{len(rows3)} 条**（`3_评论与回复_兩餸飯_2022-2026.xlsx`）\n")
+    A("| 平台 | 评论数 | 覆盖帖子 |")
+    A("| --- | --- | --- |")
+    for p in ("Instagram", "Threads"):
+        sub = [r for r in rows3 if r["平台"] == p]
+        A(f"| {p} | {len(sub)} | {len({r['帖子 ID'] for r in sub})} |")
+    A(f"| **合计** | **{len(rows3)}** | — |\n")
+
+    A("## 四、文件清单\n")
+    A("| 文件 | 内容 |")
+    A("| --- | --- |")
+    A("| `1_社交平台_帖子_兩餸飯_2022-2026.xlsx` | IG / Threads / Facebook 帖子 |")
+    A("| `2_Google与媒体_兩餸飯_2022-2026.xlsx` | 报社、电视台、生活媒体、YouTube（含报道正文） |")
+    A("| `3_评论与回复_兩餸飯_2022-2026.xlsx` | IG 评论 + Threads 回复，含帖子链接与摘要 |")
+    A("| `采集统计.md` | 本文件 |")
+
+    open(OUTMD, "w", encoding="utf-8").write("\n".join(L) + "\n")
 
 
 def main():
-    n1, c1, r1 = build_part1()
-    print(f"[需求1] {OUT1}")
-    print(f"        内容 {n1} 条 ｜ IG 评论 {c1} ｜ Threads 回复 {r1}")
-    n2, b2, w2 = build_part2()
-    print(f"[需求2] {OUT2}")
-    print(f"        内容 {n2} 条 ｜ 正文 {b2} 篇 / {w2:,} 字")
+    rows1 = build_part1()
+    print(f"[1] {OUT1}  → {len(rows1)} 条")
+    rows2, body_n, body_words = build_part2()
+    print(f"[2] {OUT2}  → {len(rows2)} 条 / 正文 {body_n} 篇 {body_words:,} 字")
+    rows3 = build_part3()
+    print(f"[3] {OUT3}  → {len(rows3)} 条")
+    build_md(rows1, rows2, body_n, body_words, rows3)
+    print(f"[md] {OUTMD}")
 
 
 if __name__ == "__main__":
