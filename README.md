@@ -149,7 +149,8 @@ note              备注（是否为转载、是否含商业推广等）
 | 成功抓取 | **1088 条**（88%），合计 **136.5 万字**，平均 1254 字/篇 |
 | 长度分布 | ≥1000 字 448 篇、300–999 字 559 篇、<300 字 81 篇 |
 | 全成功的媒体 | 明报 153/153、星岛 152/152、香港01 151/151、明周 114/114、TVB 97/97、am730 22/22 |
-| YouTube 视频简介 | **267 / 327** 条（`data/youtube_details.jsonl`，另补全 319 条点赞数） |
+| YouTube 视频简介 | **267 / 327** 条（`data/youtube_details.jsonl`，另补全 319 条点赞数），平均 1.3 万字 |
+| YouTube 视频字幕 | **53 / 327** 条（`data/youtube_subs.jsonl`，28.6 万字）。132 条视频本身无字幕轨，其余被 YouTube timedtext 429 限流；按用户决定不再追采 |
 
 **方法**：不写逐站规则（各站 DOM 结构不同），统一用 `trafilatura` 的通用正文抽取（基于文本密度与 DOM 结构的启发式）。
 失败 89 条已按要求放弃：`topick.hket.com` / `news.hket.com`（405 反爬，34 条）、`hk.news.yahoo.com`（404 跳转失效，31 条）、`programme.tvb.com`（纯 JS 渲染，5 条）、`health.mingpao.com`（403，5 条）等。
@@ -230,3 +231,29 @@ python scripts/ig_collect_comments.py --ports 9222,9223,9224 --max-pages 5
 # 4. 汇总 Excel
 python scripts/build_xlsx.py
 ```
+
+---
+
+## 十、Threads 采集结果（需求 1 补充）
+
+> 采集时间：2026-11-07　｜　账号：端口 9225（profile `threads`，IG 账号 53481584205 授权登录）
+
+### 10.1 结果
+
+| 项 | 数量 |
+| --- | --- |
+| Threads 帖子 | **1191 条**（去重后 883 条唯一贴文参与回复采集；含复采累积） |
+| Threads 回复 | **1211 条**（60 帖，平均 20 条/帖） |
+| 年度分布（帖子） | 2023 **5** / 2024 **100** / 2025 **270** / 2026 **508** |
+
+### 10.2 通道
+
+- 搜索接口：`POST /graphql/query`，doc_id `40358208533770195`（`BarcelonaSearchResultsRefetchableQuery`），`after` 游标翻页，每页 10 帖
+- 回复：打开 `/@user/post/{code}`，从浏览器自身的 `BarcelonaPostPageDirectRepliesRefetchQuery` 响应解析（结构为 `posts.edges[].node.posts.edges[].node.thread_items[].post` 递归嵌套）
+- 相关性过滤：正文须含「餸飯 / 𩠌飯 / dish rice」等词
+
+### 10.3 说明
+
+- Threads 2023-07 才上线，故 2022 年无数据
+- 回复按 `reply_count` 降序取前 150 帖，实际完成 60 帖达 **1211 条**后按用户要求停止
+- 后续如需扩量：`python scripts/threads_collect_replies.py --port 9225 --limit 300 --max-pages 2`

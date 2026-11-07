@@ -339,6 +339,7 @@ def main():
     articles = load_jsonl(os.path.join(DATA, "articles.jsonl"))
     ytdesc = load_jsonl(os.path.join(DATA, "youtube_details.jsonl"))
     th_replies = load_jsonl(os.path.join(DATA, "threads", "replies.jsonl"))
+    ytsubs = load_jsonl(os.path.join(DATA, "youtube_subs.jsonl"))
 
     wb = Workbook()
 
@@ -442,6 +443,19 @@ def main():
             "链接": f"https://www.youtube.com/watch?v={d.get('video_id')}",
             "字数": d.get("desc_len", 0),
             "正文全文": (d.get("description") or "")[:30000],
+        })
+    for s_ in ytsubs:
+        if s_.get("status") != "ok" or not s_.get("text"):
+            continue
+        body_rows.append({
+            "平台": "YouTube",
+            "正文类型": "视频字幕",
+            "来源名称": s_.get("channel", ""),
+            "标题": s_.get("title", ""),
+            "发布日期": fmt_date(s_.get("published_at")),
+            "链接": f"https://www.youtube.com/watch?v={s_.get('video_id')}",
+            "字数": s_.get("text_len", 0),
+            "正文全文": (s_.get("text") or "")[:30000],
         })
     body_rows.sort(key=lambda x: x["发布日期"])
     write_sheet(wb.create_sheet("报道正文"), body_rows, BODY_COLS)
