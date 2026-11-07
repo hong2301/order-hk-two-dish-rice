@@ -228,6 +228,14 @@ def write_stats(ws, rows, years=("2022", "2023", "2024", "2025", "2026"), date_k
     return pc
 
 
+WIN_START = "2022-01-01"
+WIN_END = "2026-10-31"
+
+
+def in_window(d):
+    return bool(d) and WIN_START <= str(d)[:10] <= WIN_END
+
+
 def blank(s=""):
     return {"平台": s, "采集通道": "", "来源类型": "", "来源名称": "", "域名": "",
             "标题 / 正文": "", "发布日期": "", "采集日期": "", "链接": "",
@@ -286,6 +294,7 @@ def build_part1():
             "时长(秒)": "", "检索关键词": p.get("query", ""), "标题命中": "是",
             "正文字数": len(txt), "备注": note, "_sort": fmt_date(p.get("published_at")),
         })
+    rows = [r for r in rows if in_window(r["_sort"])]
     rows.sort(key=lambda x: (x["_sort"], x["平台"]))
 
     wb = Workbook()
@@ -332,6 +341,10 @@ def build_part2():
         if st in ("facebook", "instagram", "threads"):
             continue
         url = r.get("url", "")
+        if st == "youtube":
+            vid = url.split("v=")[-1].split("&")[0] if "watch?v=" in url else ""
+            if vid and vid in yt_ids:
+                continue
         remark = "原链接解码失败" if not url else ""
         a = art_by_url.get(url)
         rows.append({
@@ -341,7 +354,7 @@ def build_part2():
                          "youtube": "YouTube视频", "other": "其他网站"}.get(st, st),
             "来源名称": pretty_source(r.get("source_name"), r.get("source_domain")),
             "域名": r.get("source_domain", ""), "标题": r.get("title", ""),
-            "正文": (a or {}).get("text", "") or "",
+            "正文": ((a or {}).get("text") or "")[:30000],
             "发布日期": fmt_date(r.get("published_at")), "采集日期": COLLECTED,
             "链接": url or r.get("google_link", ""), "播放量": "", "点赞数": "",
             "评论数": "", "时长(秒)": "", "检索关键词": r.get("keyword", ""),
@@ -353,7 +366,7 @@ def build_part2():
         rows.append({
             "平台": "YouTube", "采集通道": "YouTube 搜索", "来源类型": "YouTube视频",
             "来源名称": r.get("channel", ""), "域名": "youtube.com",
-            "标题": r.get("title", ""), "正文": (desc_by_vid.get(r.get("video_id")) or {}).get("description", "") or "",
+            "标题": r.get("title", ""), "正文": ((desc_by_vid.get(r.get("video_id")) or {}).get("description") or "")[:30000],
             "发布日期": fmt_date(r.get("published_at")),
             "采集日期": COLLECTED, "链接": r.get("url", ""),
             "播放量": norm(r.get("view_count")), "点赞数": norm(r.get("like_count")),
@@ -363,6 +376,7 @@ def build_part2():
             "正文字数": (desc_by_vid.get(r.get("video_id")) or {}).get("desc_len", "") or "",
             "备注": "", "_sort": fmt_date(r.get("published_at")),
         })
+    rows = [r for r in rows if in_window(r["_sort"])]
     rows.sort(key=lambda x: (x["_sort"], x["平台"]))
 
     body_n = sum(1 for r in rows if (r.get("正文") or "").strip())
@@ -423,7 +437,9 @@ def build_part3():
         p = th_map.get(str(c.get("post_pk")), {})
         txt = (p.get("text") or "").strip()
         rows.append({
-            "平台": "Threads", "帖子链接": f"https://www.threads.com/post/{c.get('post_code')}",
+            "平台": "Threads",
+            "帖子链接": (f"https://www.threads.com/@{p['user_username']}/post/{c.get('post_code')}"
+                     if p.get("user_username") else f"https://www.threads.com/post/{c.get('post_code')}"),
             "帖子 ID": c.get("post_code", ""), "帖子作者": p.get("user_username", ""),
             "帖子发布日期": fmt_date(c.get("post_published_at")),
             "帖子正文摘要": txt[:80], "层级": "回复",
@@ -432,6 +448,15 @@ def build_part3():
             "点赞数": norm(c.get("like_count")), "子回复数": norm(c.get("reply_count")),
             "采集日期": COLLECTED, "_sort": fmt_date(c.get("published_at")),
         })
+    rows = [r for r in rows if str(r.get("评论内容") or "").strip()]
+    seen3, uniq3 = set(), []
+    for r in rows:
+        k = (r["平台"], r["帖子链接"], r["评论者"], str(r["评论内容"])[:40], r["评论日期"])
+        if k in seen3:
+            continue
+        seen3.add(k)
+        uniq3.append(r)
+    rows = uniq3
     rows.sort(key=lambda x: (x["_sort"], x["平台"]))
 
     wb = Workbook()
