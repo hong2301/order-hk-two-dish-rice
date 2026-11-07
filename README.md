@@ -139,12 +139,33 @@ note              备注（是否为转载、是否含商业推广等）
 - **噪声**：标题未必含「兩餸飯」（`title_hit` 列标注，标题命中 1381 / 2162）。相关性扩散条目保留以便研究者自行筛选。
 - **Facebook / Instagram**：本集仅含 Google News 索引到的公开贴文链接（各 294 / 308 条），属需求 1 的线索，正式采集（正文、评论、互动量）另做。
 
-### 8.5 复现
+### 8.5 正文全文采集（`data/articles.jsonl`）
+
+标题层之外，对报社 / 电视台 / 生活媒体的报道页抓取**正文全文**：
+
+| 项 | 结果 |
+| --- | --- |
+| 目标条数 | 1234 条（news + tv + lifestyle + aggregator + intl） |
+| 成功抓取 | **1088 条**（88%），合计 **136.5 万字**，平均 1254 字/篇 |
+| 长度分布 | ≥1000 字 448 篇、300–999 字 559 篇、<300 字 81 篇 |
+| 全成功的媒体 | 明报 153/153、星岛 152/152、香港01 151/151、明周 114/114、TVB 97/97、am730 22/22 |
+| YouTube 视频简介 | **267 / 327** 条（`data/youtube_details.jsonl`，另补全 319 条点赞数） |
+
+**方法**：不写逐站规则（各站 DOM 结构不同），统一用 `trafilatura` 的通用正文抽取（基于文本密度与 DOM 结构的启发式）。
+失败 89 条已按要求放弃：`topick.hket.com` / `news.hket.com`（405 反爬，34 条）、`hk.news.yahoo.com`（404 跳转失效，31 条）、`programme.tvb.com`（纯 JS 渲染，5 条）、`health.mingpao.com`（403，5 条）等。
+
+正文并入 Excel 的「报道正文」sheet（1355 行 = 1088 篇报道 + 267 条视频简介），主表新增「正文字数」列可按有无正文筛选。
+
+### 8.6 复现
 
 ```bash
 pip install requests yt-dlp
 python scripts/collect_google_news.py   # Google News + 真实 URL 解码
 python scripts/collect_youtube_html.py  # YouTube 搜索 + 上载日期
+python scripts/fetch_articles.py        # 报道正文全文（trafilatura）
+python scripts/fetch_youtube_desc.py    # YouTube 视频简介
+python scripts/threads_collect.py       # Threads 帖子
+python scripts/threads_collect_replies.py  # Threads 回复
 python scripts/build_summary.py         # 命中标记 + 统计
 python scripts/build_xlsx.py            # 生成汇总 Excel
 ```
